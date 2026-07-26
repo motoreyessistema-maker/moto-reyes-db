@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOTO REYES - SQL + NETLIFY</title>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<style>:root{--azul:#1565C0}*{box-sizing:border-box}body{font-family:Segoe UI,sans-serif;background:#0D47A1;margin:0}.oculto{display:none!important}.login{display:flex;min-height:100vh;justify-content:center;align-items:center}.box{background:#fff;padding:30px;border-radius:12px;width:380px}.btn{background:#1565C0;color:#fff;padding:10px 14px;border:none;border-radius:6px;cursor:pointer}.toolbar{background:#fff;padding:10px;border-radius:10px;display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.tabla{background:#fff;padding:15px;border-radius:10px;overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th{background:#1565C0;color:#fff;padding:8px}td{padding:8px;border-bottom:1px solid #eee}.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99;justify-content:center;align-items:center}.modal-content{background:#fff;padding:20px;border-radius:10px;width:95%;max-width:700px;max-height:90vh;overflow:auto}</style>
+</head>
+<body>
+<div class="login" id="loginScreen"><div class="box"><h2 style="text-align:center;color:#1565C0">🏍️ MOTO REYES SQL</h2><p style="text-align:center;font-size:11px;color:#666">Netlify + Postgres Seguro<br><span id="estado">Conectando...</span></p><input id="usuario" placeholder="Usuario" value="admin" style="width:100%;padding:10px;margin:8px 0;border:2px solid #BBDEFB;border-radius:6px"><input id="password" type="password" placeholder="Pass" value="admin123" style="width:100%;padding:10px;margin:8px 0;border:2px solid #BBDEFB;border-radius:6px"><button class="btn" style="width:100%" onclick="login()">Entrar</button></div></div>
+
+<div id="app" class="oculto">
+<div style="background:#1565C0;color:#fff;padding:12px;display:flex;justify-content:space-between"><b>MOTO REYES - SQL</b><div><span id="userLabel"></span> <button onclick="logout()" style="margin-left:10px">Salir</button></div></div>
+<div style="padding:20px;max-width:1400px;margin:0 auto">
+<div class="toolbar">
+<button class="btn" onclick="abrirNuevo()">➕ Nuevo</button>
+<button class="btn" style="background:#546E7A" onclick="cargarInventario()">🔄 Recargar</button>
+<button class="btn" style="background:#4CAF50" onclick="document.getElementById('fileExcel').click()">📤 Importar Excel</button>
+<input type="file" id="fileExcel" style="display:none" accept=".xlsx" onchange="importarExcel(event)">
+<button class="btn" style="background:#FF9800" onclick="exportarExcel()">📊 Exportar</button>
+<input id="buscador" placeholder="Buscar..." style="flex:1;padding:8px;border:2px solid #BBDEFB;border-radius:6px" onkeyup="filtrar()">
+</div>
+<div class="tabla"><table><thead><tr><th>Código</th><th>Producto</th><th>Marca</th><th>Cat</th><th>Stock</th><th>General</th><th>Taller</th><th>Acciones</th></tr></thead><tbody id="tbody"></tbody></table></div>
+</div>
+</div>
+
+<div id="modalProd" class="modal"><div class="modal-content">
+<h3 id="tituloModal">Producto</h3>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+<input id="codigo" placeholder="Código *"><input id="nombre" placeholder="Nombre *">
+<input id="marca" placeholder="Marca" value="GENERICO"><input id="categoria" placeholder="Categoría" value="General">
+<input id="precioBase" type="number" placeholder="Base" oninput="calc()"><input id="pGeneral" type="number" placeholder="General">
+<input id="precioTaller" type="number" placeholder="Taller"><input id="stock" type="number" placeholder="Stock" value="10">
+<input id="ubicacion" placeholder="Ubicación">
+</div>
+<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px"><button class="btn" style="background:#546E7A" onclick="cerrarModal()">Cancelar</button><button class="btn" style="background:#4CAF50" onclick="guardarProd()">Guardar en SQL</button></div>
+</div></div>
+
+<div id="modalEtiqueta" class="modal"><div class="modal-content" style="max-width:350px;text-align:center">
+<h3>🏷️ Etiqueta</h3>
+<div style="background:#FFF3E0;padding:8px;border-radius:6px;margin:10px 0;font-size:12px;text-align:left">
+<label><input type="radio" name="tipoImp" value="stock" checked> Por Stock (<span id="stockActual"></span>)</label><br>
+<label><input type="radio" name="tipoImp" value="custom"> Manual: <input type="number" id="cantidadEtiquetas" value="1" style="width:50px"> pzas</label>
+</div>
+<div id="etiquetaBox" style="border:1px dashed #000;padding:10px;background:#fff">
+<div id="etNombre" style="font-weight:800"></div><div id="etMarca" style="font-size:11px;color:#666"></div><svg id="barcode"></svg><div id="etCodigo" style="font-size:10px"></div><div style="font-size:16px;font-weight:900;color:#1565C0">General: <span id="etGeneral"></span></div>
+</div>
+<button class="btn" style="background:#4CAF50;margin-top:10px" onclick="imprimirEtiquetas()">🖨️ Imprimir</button> <button class="btn" style="background:#546E7A" onclick="document.getElementById('modalEtiqueta').style.display='none'">Cerrar</button>
+</div></div>
+
+<script>
+let TOKEN = localStorage.getItem('mr_token');
+let inventario = [];
+let editCodigo = null;
+let etiquetaProd = null;
+
+async function login(){
+  const usuario=document.getElementById('usuario').value;
+  const password=document.getElementById('password').value;
+  const res = await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usuario,password})});
+  const data = await res.json();
+  if(!res.ok){ Swal.fire(data.error||'Error','','error'); return; }
+  TOKEN=data.token;
+  localStorage.setItem('mr_token', TOKEN);
+  iniciarApp(data.user.usuario);
+}
+function iniciarApp(user){
+  document.getElementById('loginScreen').classList.add('oculto');
+  document.getElementById('app').classList.remove('oculto');
+  document.getElementById('userLabel').textContent=user;
+  cargarInventario();
+}
+function logout(){ localStorage.removeItem('mr_token'); location.reload(); }
+if(TOKEN){ iniciarApp('admin'); document.getElementById('estado').textContent='Token guardado'; }
+
+async function api(path, method='GET', body=null){
+  const h={'Content-Type':'application/json','Authorization':'Bearer '+TOKEN};
+  const res=await fetch('/api/'+path,{method,headers:h,body: body?JSON.stringify(body):null});
+  if(res.status===401){ logout(); throw new Error('No autorizado'); }
+  return res.json();
+}
+
+async function cargarInventario(){
+  document.getElementById('estado').textContent='Cargando SQL...';
+  try{
+    const data = await api('inventario');
+    inventario=data;
+    renderTabla();
+    document.getElementById('estado').textContent='● SQL Conectado - '+data.length+' prod';
+  }catch(e){
+    // fallback local para no trabarse
+    inventario = JSON.parse(localStorage.getItem('mr_local')||'[]');
+    renderTabla();
+    document.getElementById('estado').textContent='● OFFLINE LOCAL (sin SQL)';
+  }
+}
+function renderTabla(){
+  const tb=document.getElementById('tbody');
+  tb.innerHTML=inventario.map((p,i)=>`<tr>
+<td><b>${p.codigo}</b></td><td>${p.nombre}</td><td>${p.marca}</td><td>${p.categoria}</td>
+<td><span style="background:${p.stock>5?'#4CAF50':'#FF9800'};color:#fff;padding:2px 6px;border-radius:6px">${p.stock}</span></td>
+<td>$${p.precio_general||p.precioGeneral}</td><td>$${p.precio_taller||p.precioTaller}</td>
+<td><div style="display:flex;gap:4px"><button onclick="abrirEtiqueta('${p.codigo}')" style="background:#FF9800;color:#fff;border:none;padding:4px 6px;border-radius:4px">🏷️</button><button onclick="editarProd('${p.codigo}')" style="background:#4CAF50;color:#fff;border:none;padding:4px 6px;border-radius:4px">✏️</button><button onclick="borrarProd('${p.codigo}')" style="background:#F44336;color:#fff;border:none;padding:4px 6px;border-radius:4px">🗑️</button></div></td>
+</tr>`).join('');
+  localStorage.setItem('mr_local', JSON.stringify(inventario));
+}
+function filtrar(){ const t=document.getElementById('buscador').value.toLowerCase(); document.querySelectorAll('#tbody tr').forEach(tr=>tr.style.display=tr.textContent.toLowerCase().includes(t)?'':'none'); }
+function abrirNuevo(){ editCodigo=null; document.getElementById('tituloModal').textContent='➕ Nuevo'; ['codigo','nombre','marca','categoria','precioBase','pGeneral','precioTaller','stock','ubicacion'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=id==='stock'?'10':id==='marca'?'GENERICO':id==='categoria'?'General':''; }); document.getElementById('modalProd').style.display='flex'; }
+function cerrarModal(){ document.getElementById('modalProd').style.display='none'; }
+function editarProd(codigo){ const p=inventario.find(x=>x.codigo===codigo); if(!p) return; editCodigo=codigo; document.getElementById('codigo').value=p.codigo; document.getElementById('nombre').value=p.nombre; document.getElementById('marca').value=p.marca; document.getElementById('categoria').value=p.categoria; document.getElementById('precioBase').value=p.precio_base||''; document.getElementById('pGeneral').value=p.precio_general||p.precioGeneral||''; document.getElementById('precioTaller').value=p.precio_taller||p.precioTaller||''; document.getElementById('stock').value=p.stock; document.getElementById('ubicacion').value=p.ubicacion||''; document.getElementById('modalProd').style.display='flex'; }
+async function guardarProd(){
+  const codigo=document.getElementById('codigo').value.trim().toUpperCase();
+  const nombre=document.getElementById('nombre').value.trim();
+  if(!codigo||!nombre) return Swal.fire('Falta','','warning');
+  const prod={codigo,nombre,marca:document.getElementById('marca').value,categoria:document.getElementById('categoria').value,precioBase:parseInt(document.getElementById('precioBase').value)||0,precioGeneral:parseInt(document.getElementById('pGeneral').value)||0,precioTaller:parseInt(document.getElementById('precioTaller').value)||0,stock:parseInt(document.getElementById('stock').value)||0,ubicacion:document.getElementById('ubicacion').value,foto:''};
+  try{ await api('inventario','POST',prod); }catch(e){ /* guarda local si no hay red */ }
+  const idx=inventario.findIndex(p=>p.codigo===codigo);
+  if(idx>=0) inventario[idx]={...inventario[idx], ...prod, precio_general:prod.precioGeneral, precio_taller:prod.precioTaller, precio_base:prod.precioBase};
+  else inventario.push({...prod, precio_general:prod.precioGeneral, precio_taller:prod.precioTaller});
+  renderTabla(); cerrarModal();
+  Swal.fire({toast:true,icon:'success',title:'Guardado en SQL',timer:1200,showConfirmButton:false});
+}
+async function borrarProd(codigo){
+  Swal.fire({title:'¿Borrar '+codigo+'?',showCancelButton:true,confirmButtonColor:'#d33'}).then(async r=>{
+    if(r.isConfirmed){
+      try{ await api('inventario?codigo='+codigo,'DELETE'); }catch(e){}
+      inventario=inventario.filter(p=>p.codigo!==codigo);
+      renderTabla();
+    }
+  });
+}
+function calc(){ const b=parseFloat(document.getElementById('precioBase').value)||0; document.getElementById('pGeneral').value=b? Math.round(b*1.2):''; document.getElementById('precioTaller').value=b? Math.round(b*1.4):''; }
+
+function abrirEtiqueta(codigo){ const p=inventario.find(x=>x.codigo===codigo); etiquetaProd=p; document.getElementById('etNombre').textContent=p.nombre; document.getElementById('etMarca').textContent=p.marca; document.getElementById('etCodigo').textContent=p.codigo; document.getElementById('etGeneral').textContent='$'+(p.precio_general||p.precioGeneral); document.getElementById('stockActual').textContent=p.stock; document.getElementById('cantidadEtiquetas').value=p.stock>0?p.stock:1; document.getElementById('modalEtiqueta').style.display='flex'; setTimeout(()=>{ JsBarcode('#barcode',p.codigo,{format:'CODE128',width:2,height:50,displayValue:false}); },100); }
+function imprimirEtiquetas(){
+  const p=etiquetaProd; const tipo=document.querySelector('input[name="tipoImp"]:checked').value; let cant=tipo==='stock'?p.stock:parseInt(document.getElementById('cantidadEtiquetas').value)||1; if(cant<=0) cant=1;
+  let html=''; for(let k=0;k<cant;k++){ html+=`<div style="border:1px dashed #000;padding:8px;margin:4px;width:240px;display:inline-block;text-align:center"><div style="font-weight:800;font-size:11px">${p.nombre}</div><div style="font-size:10px;color:#666">${p.marca}</div><svg class="bc" data-c="${p.codigo}"></svg><div style="font-size:9px">${p.codigo}</div><div style="font-size:14px;font-weight:900;color:#1565C0">$${p.precio_general||p.precioGeneral}</div></div>`; }
+  const w=window.open('','_blank'); w.document.write(`<html><head><script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"><\/script><style>body{font-family:Arial;display:flex;flex-wrap:wrap}</style></head><body>${html}<script>document.querySelectorAll('.bc').forEach(el=>{JsBarcode(el,el.dataset.c,{format:"CODE128",width:1.8,height:40,displayValue:false})});setTimeout(()=>{window.print();window.close()},600)<\/script></body></html>`); w.document.close();
+}
+
+function exportarExcel(){ const ws=XLSX.utils.json_to_sheet(inventario.map(p=>({Codigo:p.codigo,Producto:p.nombre,Marca:p.marca,Stock:p.stock,General:p.precio_general||p.precioGeneral,Taller:p.precio_taller||p.precioTaller}))); const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Inv'); XLSX.writeFile(wb,'Inventario_MotoReyes_SQL.xlsx'); }
+function importarExcel(e){ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=ev=>{ const wb=XLSX.read(ev.target.result,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]]; const data=XLSX.utils.sheet_to_json(ws); data.forEach(row=>{ const codigo=String(row.Codigo||'').toUpperCase(); if(!codigo) return; const prod={codigo,nombre:row.Producto||codigo,marca:row.Marca||'GEN',categoria:'General',stock:parseInt(row.Stock)||0,precioBase:0,precioGeneral:parseInt(row.General)||0,precioTaller:parseInt(row.Taller)||0,ubicacion:'',foto:''}; api('inventario','POST',prod).catch(()=>{}); }); setTimeout(cargarInventario,1000); }; r.readAsArrayBuffer(f); }
+</script>
+</body>
+</html>

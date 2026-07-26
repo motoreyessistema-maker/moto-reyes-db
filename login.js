@@ -1,8 +1,0 @@
-{
-  "name": "moto-reyes-supabase",
-  "type": "module",
-  "dependencies": {
-    "@supabase/supabase-js": "2.45.4",
-    "jsonwebtoken": "9.0.2"
-  }
-}
